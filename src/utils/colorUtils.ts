@@ -1,4 +1,4 @@
-import { Color, PaletteAlgorithm } from '../types';
+import { Color, LockedColor, PaletteAlgorithm, PaletteSeries } from '../types';
 
 // Convert hex to RGB
 export function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -66,7 +66,10 @@ export function hslToRgb(h: number, s: number, l: number): { r: number; g: numbe
 
 // Convert RGB to hex
 export function rgbToHex(r: number, g: number, b: number): string {
-  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  const roundedR = Math.round(r);
+  const roundedG = Math.round(g);
+  const roundedB = Math.round(b);
+  return "#" + ((1 << 24) + (roundedR << 16) + (roundedG << 8) + roundedB).toString(16).slice(1);
 }
 
 // Create Color object from hex
@@ -77,7 +80,11 @@ export function createColorFromHex(hex: string): Color {
   return {
     hex: hex.toUpperCase(),
     hsl,
-    rgb
+    rgb: {
+      r: Math.round(rgb.r),
+      g: Math.round(rgb.g),
+      b: Math.round(rgb.b)
+    }
   };
 }
 
@@ -135,6 +142,10 @@ export function generatePalette(
       colors.push(createColorFromHsl((baseColor.hsl.h + 180) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift));
       colors.push(createColorFromHsl((baseColor.hsl.h + 270) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift));
       break;
+      
+    case 'auto':
+      // Auto algorithm generates colors based on harmony principles
+      return generateAutoPalette(baseColor, colorCount, hueShift, saturationShift, lightnessShift);
   }
   
   return colors.slice(0, colorCount);
@@ -159,20 +170,32 @@ function createColorFromHsl(
   return {
     hex: hex.toUpperCase(),
     hsl: { h: newH, s: newS, l: newL },
-    rgb
+    rgb: {
+      r: Math.round(rgb.r),
+      g: Math.round(rgb.g),
+      b: Math.round(rgb.b)
+    }
   };
 }
 
 // Apply shifts to existing color
 function applyShifts(color: Color, hueShift: number, saturationShift: number, lightnessShift: number): Color {
-  return createColorFromHsl(
-    color.hsl.h,
-    color.hsl.s,
-    color.hsl.l,
-    hueShift,
-    saturationShift,
-    lightnessShift
-  );
+  const newH = (color.hsl.h + hueShift) % 360;
+  const newS = Math.max(0, Math.min(100, color.hsl.s + saturationShift));
+  const newL = Math.max(0, Math.min(100, color.hsl.l + lightnessShift));
+  
+  const rgb = hslToRgb(newH, newS, newL);
+  const hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+  
+  return {
+    hex: hex.toUpperCase(),
+    hsl: { h: newH, s: newS, l: newL },
+    rgb: {
+      r: Math.round(rgb.r),
+      g: Math.round(rgb.g),
+      b: Math.round(rgb.b)
+    }
+  };
 }
 
 // Copy color to clipboard
@@ -192,4 +215,314 @@ export function generateRandomColor(): string {
   
   const rgb = hslToRgb(hue, saturation, lightness);
   return rgbToHex(rgb.r, rgb.g, rgb.b);
+}
+
+// Generate auto palette with intelligent color harmony
+function generateAutoPalette(
+  baseColor: Color,
+  colorCount: number,
+  hueShift: number,
+  saturationShift: number,
+  lightnessShift: number
+): Color[] {
+  const colors: Color[] = [];
+  
+  // Start with the base color
+  colors.push(applyShifts(baseColor, hueShift, saturationShift, lightnessShift));
+  
+  if (colorCount === 1) return colors;
+  
+  // Generate harmonious colors using multiple strategies
+  const strategies = [
+    // Complementary colors
+    () => createColorFromHsl((baseColor.hsl.h + 180) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    // Triadic colors
+    () => createColorFromHsl((baseColor.hsl.h + 120) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    () => createColorFromHsl((baseColor.hsl.h + 240) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    // Analogous colors
+    () => createColorFromHsl((baseColor.hsl.h + 30) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    () => createColorFromHsl((baseColor.hsl.h - 30) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    // Split complementary
+    () => createColorFromHsl((baseColor.hsl.h + 150) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    () => createColorFromHsl((baseColor.hsl.h + 210) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    // Tetradic
+    () => createColorFromHsl((baseColor.hsl.h + 90) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    () => createColorFromHsl((baseColor.hsl.h + 270) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift),
+    // Monochromatic variations
+    () => createColorFromHsl(baseColor.hsl.h, Math.max(0, Math.min(100, baseColor.hsl.s + 20)), Math.max(0, Math.min(100, baseColor.hsl.l + 20)), hueShift, saturationShift, lightnessShift),
+    () => createColorFromHsl(baseColor.hsl.h, Math.max(0, Math.min(100, baseColor.hsl.s - 20)), Math.max(0, Math.min(100, baseColor.hsl.l - 20)), hueShift, saturationShift, lightnessShift),
+  ];
+  
+  // Use different strategies to fill remaining colors
+  for (let i = 1; i < colorCount; i++) {
+    const strategyIndex = (i - 1) % strategies.length;
+    const newColor = strategies[strategyIndex]();
+    colors.push(newColor);
+  }
+  
+  return colors;
+}
+
+// Generate auto palette with locked colors
+export function generateAutoPaletteWithLocks(
+  baseColor: Color,
+  colorCount: number,
+  lockedColors: LockedColor[],
+  hueShift: number,
+  saturationShift: number,
+  lightnessShift: number,
+  hueDelta: number = 30,
+  saturationDelta: number = 20,
+  lightnessDelta: number = 20,
+  seed: number = 0
+): Color[] {
+  const colors: Color[] = new Array(colorCount);
+  
+  // Seeded random number generator
+  const seededRandom = (seed: number) => {
+    const x = Math.sin(seed) * 10000;
+    return Math.abs(x - Math.floor(x));
+  };
+  
+  // Always set the first color to be the base color (always use current base color, not locked color)
+  // This ensures locked base colors always reflect the current base color
+  colors[0] = applyShifts(baseColor, hueShift, saturationShift, lightnessShift);
+  
+  // Place other locked colors in their positions (skip index 0 since it's always the base color)
+  lockedColors.forEach(locked => {
+    if (locked.index > 0 && locked.index < colorCount) {
+      colors[locked.index] = applyShifts(locked.color, hueShift, saturationShift, lightnessShift);
+    }
+  });
+  
+  // Generate colors for empty positions using sophisticated color theory
+  for (let i = 1; i < colorCount; i++) {
+    if (!colors[i]) {
+      // Find the nearest locked color to base the new color on
+      const nearestLocked = findNearestLockedColor(i, lockedColors);
+      const referenceColor = nearestLocked || baseColor;
+      
+      // Generate a sophisticated harmonious color based on color theory
+      const randomSeed = seed + i * 1000; // Different seed for each color position
+      const harmonyType = Math.floor(seededRandom(randomSeed) * 4); // 0-3 for different harmony types
+      
+      let newHue: number;
+      let newSaturation: number;
+      let newLightness: number;
+      
+      switch (harmonyType) {
+        case 0: // Analogous (adjacent colors)
+          newHue = (referenceColor.hsl.h + (seededRandom(randomSeed + 1) - 0.5) * hueDelta * 0.6 + 360) % 360;
+          newSaturation = Math.max(20, Math.min(80, referenceColor.hsl.s + (seededRandom(randomSeed + 2) - 0.5) * saturationDelta * 0.8));
+          newLightness = Math.max(15, Math.min(85, referenceColor.hsl.l + (seededRandom(randomSeed + 3) - 0.5) * lightnessDelta * 0.7));
+          break;
+          
+        case 1: // Complementary (opposite colors)
+          const complementaryHue = (referenceColor.hsl.h + 180 + (seededRandom(randomSeed + 1) - 0.5) * hueDelta * 0.4) % 360;
+          newHue = complementaryHue;
+          newSaturation = Math.max(30, Math.min(90, referenceColor.hsl.s + (seededRandom(randomSeed + 2) - 0.5) * saturationDelta * 0.6));
+          newLightness = Math.max(20, Math.min(80, referenceColor.hsl.l + (seededRandom(randomSeed + 3) - 0.5) * lightnessDelta * 0.8));
+          break;
+          
+        case 2: // Triadic (120 degrees apart)
+          const triadicOffset = seededRandom(randomSeed + 1) > 0.5 ? 120 : -120;
+          newHue = (referenceColor.hsl.h + triadicOffset + (seededRandom(randomSeed + 2) - 0.5) * hueDelta * 0.5 + 360) % 360;
+          newSaturation = Math.max(25, Math.min(85, referenceColor.hsl.s + (seededRandom(randomSeed + 3) - 0.5) * saturationDelta * 0.7));
+          newLightness = Math.max(18, Math.min(82, referenceColor.hsl.l + (seededRandom(randomSeed + 4) - 0.5) * lightnessDelta * 0.6));
+          break;
+          
+        case 3: // Split-complementary (adjacent to complementary)
+          const splitOffset = seededRandom(randomSeed + 1) > 0.5 ? 150 : -150;
+          newHue = (referenceColor.hsl.h + splitOffset + (seededRandom(randomSeed + 2) - 0.5) * hueDelta * 0.4 + 360) % 360;
+          newSaturation = Math.max(30, Math.min(88, referenceColor.hsl.s + (seededRandom(randomSeed + 3) - 0.5) * saturationDelta * 0.6));
+          newLightness = Math.max(22, Math.min(78, referenceColor.hsl.l + (seededRandom(randomSeed + 4) - 0.5) * lightnessDelta * 0.7));
+          break;
+          
+        default:
+          // Fallback to original logic
+          newHue = (referenceColor.hsl.h + (seededRandom(randomSeed) - 0.5) * hueDelta * 2 + 360) % 360;
+          newSaturation = Math.max(0, Math.min(100, referenceColor.hsl.s + (seededRandom(randomSeed + 1) - 0.5) * saturationDelta * 2));
+          newLightness = Math.max(0, Math.min(100, referenceColor.hsl.l + (seededRandom(randomSeed + 2) - 0.5) * lightnessDelta * 2));
+      }
+      
+      // Ensure the color has good contrast and isn't too similar to existing colors
+      const finalColor = createColorFromHsl(newHue, newSaturation, newLightness, hueShift, saturationShift, lightnessShift);
+      
+      // Check for similarity with existing colors and adjust if needed
+      let adjustedColor = finalColor;
+      for (let j = 0; j < i; j++) {
+        if (colors[j]) {
+          const similarity = calculateColorSimilarity(adjustedColor, colors[j]);
+          if (similarity > 0.85) { // Too similar, adjust
+            const adjustmentSeed = randomSeed + j * 100;
+            const hueAdjustment = (seededRandom(adjustmentSeed) - 0.5) * 60; // ±30 degrees
+            const newAdjustedHue = (adjustedColor.hsl.h + hueAdjustment + 360) % 360;
+            adjustedColor = createColorFromHsl(newAdjustedHue, adjustedColor.hsl.s, adjustedColor.hsl.l, hueShift, saturationShift, lightnessShift);
+          }
+        }
+      }
+      
+      colors[i] = adjustedColor;
+    }
+  }
+  
+  return colors;
+}
+
+// Find the nearest locked color to a given position
+function findNearestLockedColor(position: number, lockedColors: LockedColor[]): Color | null {
+  if (lockedColors.length === 0) return null;
+  
+  let nearest = lockedColors[0];
+  let minDistance = Math.abs(lockedColors[0].index - position);
+  
+  for (const locked of lockedColors) {
+    const distance = Math.abs(locked.index - position);
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearest = locked;
+    }
+  }
+  
+  return nearest.color;
+}
+
+// Calculate color similarity (0 = identical, 1 = completely different)
+function calculateColorSimilarity(color1: Color, color2: Color): number {
+  const h1 = color1.hsl.h;
+  const s1 = color1.hsl.s;
+  const l1 = color1.hsl.l;
+  
+  const h2 = color2.hsl.h;
+  const s2 = color2.hsl.s;
+  const l2 = color2.hsl.l;
+  
+  // Calculate hue difference (considering circular nature)
+  const hueDiff = Math.min(Math.abs(h1 - h2), 360 - Math.abs(h1 - h2)) / 180;
+  
+  // Calculate saturation and lightness differences
+  const satDiff = Math.abs(s1 - s2) / 100;
+  const lightDiff = Math.abs(l1 - l2) / 100;
+  
+  // Weighted similarity calculation
+  return (hueDiff * 0.5 + satDiff * 0.3 + lightDiff * 0.2);
+}
+
+// Generate multiple palette series from multiple base colors with alignment
+export function generateMultiplePaletteSeries(
+  baseColors: string[],
+  colorCount: number,
+  algorithm: PaletteAlgorithm,
+  hueShift: number = 0,
+  saturationShift: number = 0,
+  lightnessShift: number = 0
+): PaletteSeries[] {
+  if (algorithm === 'auto') {
+    // For auto mode, generate aligned palettes
+    return generateAlignedAutoPalettes(baseColors, colorCount, hueShift, saturationShift, lightnessShift);
+  }
+  
+  return baseColors.map(baseColor => ({
+    baseColor,
+    palette: generatePalette([baseColor], colorCount, algorithm, hueShift, saturationShift, lightnessShift)
+  }));
+}
+
+// Generate aligned auto palettes that work well together in a color picker grid
+function generateAlignedAutoPalettes(
+  baseColors: string[],
+  colorCount: number,
+  hueShift: number = 0,
+  saturationShift: number = 0,
+  lightnessShift: number = 0
+): PaletteSeries[] {
+  const palettes: PaletteSeries[] = [];
+  
+  // Generate a master harmony pattern that all palettes will follow
+  const masterHarmony = generateMasterHarmonyPattern(colorCount);
+  
+  for (let i = 0; i < baseColors.length; i++) {
+    const baseColor = createColorFromHex(baseColors[i]);
+    const palette: Color[] = [];
+    
+    // Always start with the base color
+    palette[0] = applyShifts(baseColor, hueShift, saturationShift, lightnessShift);
+    
+    // Generate colors following the master harmony pattern
+    for (let j = 1; j < colorCount; j++) {
+      const harmonyType = masterHarmony[j - 1];
+      const newColor = generateHarmoniousColor(baseColor, harmonyType, j, i);
+      palette[j] = applyShifts(newColor, hueShift, saturationShift, lightnessShift);
+    }
+    
+    palettes.push({
+      baseColor: baseColors[i],
+      palette
+    });
+  }
+  
+  return palettes;
+}
+
+// Generate a master harmony pattern that ensures consistency across palettes
+function generateMasterHarmonyPattern(colorCount: number): number[] {
+  const pattern: number[] = [];
+  const harmonyTypes = [0, 1, 2, 3]; // analogous, complementary, triadic, split-complementary
+  
+  // Create a balanced pattern that cycles through harmony types
+  for (let i = 0; i < colorCount - 1; i++) {
+    pattern.push(harmonyTypes[i % harmonyTypes.length]);
+  }
+  
+  return pattern;
+}
+
+// Generate a harmonious color based on the base color and harmony type
+function generateHarmoniousColor(baseColor: Color, harmonyType: number, position: number, seriesIndex: number): Color {
+  const seededRandom = (seed: number) => {
+    const x = Math.sin(seed) * 10000;
+    return Math.abs(x - Math.floor(x));
+  };
+  
+  const randomSeed = seriesIndex * 1000 + position * 100;
+  
+  let newHue: number;
+  let newSaturation: number;
+  let newLightness: number;
+  
+  switch (harmonyType) {
+    case 0: // Analogous (adjacent colors)
+      newHue = (baseColor.hsl.h + (seededRandom(randomSeed) - 0.5) * 60 + 360) % 360;
+      newSaturation = Math.max(25, Math.min(85, baseColor.hsl.s + (seededRandom(randomSeed + 1) - 0.5) * 40));
+      newLightness = Math.max(20, Math.min(80, baseColor.hsl.l + (seededRandom(randomSeed + 2) - 0.5) * 50));
+      break;
+      
+    case 1: // Complementary (opposite colors)
+      newHue = (baseColor.hsl.h + 180 + (seededRandom(randomSeed) - 0.5) * 30 + 360) % 360;
+      newSaturation = Math.max(35, Math.min(90, baseColor.hsl.s + (seededRandom(randomSeed + 1) - 0.5) * 30));
+      newLightness = Math.max(25, Math.min(75, baseColor.hsl.l + (seededRandom(randomSeed + 2) - 0.5) * 40));
+      break;
+      
+    case 2: // Triadic (120 degrees apart)
+      const triadicOffset = seededRandom(randomSeed) > 0.5 ? 120 : -120;
+      newHue = (baseColor.hsl.h + triadicOffset + (seededRandom(randomSeed + 1) - 0.5) * 40 + 360) % 360;
+      newSaturation = Math.max(30, Math.min(85, baseColor.hsl.s + (seededRandom(randomSeed + 2) - 0.5) * 35));
+      newLightness = Math.max(22, Math.min(78, baseColor.hsl.l + (seededRandom(randomSeed + 3) - 0.5) * 45));
+      break;
+      
+    case 3: // Split-complementary (adjacent to complementary)
+      const splitOffset = seededRandom(randomSeed) > 0.5 ? 150 : -150;
+      newHue = (baseColor.hsl.h + splitOffset + (seededRandom(randomSeed + 1) - 0.5) * 35 + 360) % 360;
+      newSaturation = Math.max(32, Math.min(88, baseColor.hsl.s + (seededRandom(randomSeed + 2) - 0.5) * 32));
+      newLightness = Math.max(25, Math.min(75, baseColor.hsl.l + (seededRandom(randomSeed + 3) - 0.5) * 42));
+      break;
+      
+    default:
+      // Fallback
+      newHue = (baseColor.hsl.h + (seededRandom(randomSeed) - 0.5) * 90 + 360) % 360;
+      newSaturation = Math.max(20, Math.min(90, baseColor.hsl.s + (seededRandom(randomSeed + 1) - 0.5) * 50));
+      newLightness = Math.max(15, Math.min(85, baseColor.hsl.l + (seededRandom(randomSeed + 2) - 0.5) * 60));
+  }
+  
+  return createColorFromHsl(newHue, newSaturation, newLightness, 0, 0, 0);
 }

@@ -1,11 +1,12 @@
 import {
-    Box,
-    Container,
-    Divider,
-    Heading,
-    Text,
-    useColorModeValue,
-    VStack,
+  Box,
+  Container,
+  Divider,
+  Heading,
+  Text,
+  useColorModeValue,
+  useToast,
+  VStack,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
 import { ActionButtons } from './components/ActionButtons';
@@ -13,72 +14,336 @@ import { AlgorithmSelector } from './components/AlgorithmSelector';
 import { ColorCountSelector } from './components/ColorCountSelector';
 import { ColorInput } from './components/ColorInput';
 import { HSLControls } from './components/HSLControls';
+import { HSLDeltaControls } from './components/HSLDeltaControls';
 import { PaletteDisplay } from './components/PaletteDisplay';
-import { Color, PaletteAlgorithm } from './types';
-import { generatePalette, generateRandomColor } from './utils/colorUtils';
+import { Color, PaletteAlgorithm, PaletteSeries } from './types';
+import { createColorFromHex, generateAutoPaletteWithLocks, generateMultiplePaletteSeries, generateRandomColor } from './utils/colorUtils';
+
 
 function App() {
   const [baseColors, setBaseColors] = useState<string[]>(['#FF6B6B']);
   const [colorCount, setColorCount] = useState<number>(5);
   const [algorithm, setAlgorithm] = useState<PaletteAlgorithm>('complementary');
+
+  // Define maximum colors for each algorithm
+  const getMaxColors = (algo: PaletteAlgorithm): number => {
+    switch (algo) {
+      case 'complementary': return 2;
+      case 'triadic': return 3;
+      case 'analogous': return 12;
+      case 'monochromatic': return 12;
+      case 'split-complementary': return 3;
+      case 'tetradic': return 4;
+      case 'auto': return 20;
+      default: return 12;
+    }
+  };
   const [hueShift, setHueShift] = useState<number>(0);
   const [saturationShift, setSaturationShift] = useState<number>(0);
   const [lightnessShift, setLightnessShift] = useState<number>(0);
-  const [generatedPalette, setGeneratedPalette] = useState<Color[]>([]);
+  const [generatedPaletteSeries, setGeneratedPaletteSeries] = useState<PaletteSeries[]>([]);
+  const [lockedColors, setLockedColors] = useState<{ [seriesIndex: number]: { [colorIndex: number]: boolean } }>({});
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [hueDelta, setHueDelta] = useState<number>(30);
+  const [saturationDelta, setSaturationDelta] = useState<number>(20);
+  const [lightnessDelta, setLightnessDelta] = useState<number>(20);
+  const [paletteSeed, setPaletteSeed] = useState<number>(0); // For triggering palette regeneration
+  const toast = useToast();
 
-  // Generate palette whenever parameters change
-  useEffect(() => {
-    if (baseColors.length > 0) {
-      const palette = generatePalette(
-        baseColors,
-        colorCount,
-        algorithm,
-        hueShift,
-        saturationShift,
-        lightnessShift
-      );
-      setGeneratedPalette(palette);
-    }
-  }, [baseColors, colorCount, algorithm, hueShift, saturationShift, lightnessShift]);
-
-  // URL sharing functionality
+  // Initialize from URL parameters first
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const baseColor = params.get('baseColor');
+    
+    // Handle multiple base colors
+    const baseColorsParam = params.get('baseColors');
+    if (baseColorsParam) {
+      try {
+        const colors = JSON.parse(baseColorsParam);
+        if (Array.isArray(colors) && colors.length > 0) {
+          setBaseColors(colors);
+        }
+      } catch (e) {
+        // Fallback to single base color for backward compatibility
+        const baseColor = params.get('baseColor');
+        if (baseColor) {
+          setBaseColors([baseColor]);
+        }
+      }
+    } else {
+      // Fallback to single base color for backward compatibility
+      const baseColor = params.get('baseColor');
+      if (baseColor) {
+        setBaseColors([baseColor]);
+      }
+    }
+    
     const count = params.get('count');
     const algo = params.get('algorithm');
     const hue = params.get('hue');
     const sat = params.get('saturation');
     const light = params.get('lightness');
 
-    if (baseColor) setBaseColors([baseColor]);
-    if (count) setColorCount(parseInt(count));
+    if (count) {
+      const countValue = parseInt(count);
+      if (!isNaN(countValue) && countValue > 0) {
+        setColorCount(countValue);
+      }
+    }
     if (algo) setAlgorithm(algo as PaletteAlgorithm);
-    if (hue) setHueShift(parseInt(hue));
-    if (sat) setSaturationShift(parseInt(sat));
-    if (light) setLightnessShift(parseInt(light));
+    if (hue) {
+      const hueValue = parseInt(hue);
+      if (!isNaN(hueValue)) setHueShift(hueValue);
+    }
+    if (sat) {
+      const satValue = parseInt(sat);
+      if (!isNaN(satValue)) setSaturationShift(satValue);
+    }
+    if (light) {
+      const lightValue = parseInt(light);
+      if (!isNaN(lightValue)) setLightnessShift(lightValue);
+    }
+    
+    // Handle HSL delta values
+    const hueDeltaParam = params.get('hueDelta');
+    const saturationDeltaParam = params.get('saturationDelta');
+    const lightnessDeltaParam = params.get('lightnessDelta');
+    
+    if (hueDeltaParam) {
+      const hueDeltaValue = parseInt(hueDeltaParam);
+      if (!isNaN(hueDeltaValue) && hueDeltaValue > 0) setHueDelta(hueDeltaValue);
+    }
+    if (saturationDeltaParam) {
+      const saturationDeltaValue = parseInt(saturationDeltaParam);
+      if (!isNaN(saturationDeltaValue) && saturationDeltaValue > 0) setSaturationDelta(saturationDeltaValue);
+    }
+    if (lightnessDeltaParam) {
+      const lightnessDeltaValue = parseInt(lightnessDeltaParam);
+      if (!isNaN(lightnessDeltaValue) && lightnessDeltaValue > 0) setLightnessDelta(lightnessDeltaValue);
+    }
+    
+    // Handle locked colors for auto algorithm
+    const lockedColorsParam = params.get('lockedColors');
+    if (lockedColorsParam) {
+      try {
+        const lockedColorsData = JSON.parse(lockedColorsParam);
+        setLockedColors(lockedColorsData);
+      } catch (e) {
+        // Ignore invalid locked colors data
+      }
+    }
+    
+    setIsInitialized(true);
   }, []);
+
+  // Adjust color count when algorithm changes
+  useEffect(() => {
+    if (!isInitialized) return;
+    const maxColors = getMaxColors(algorithm);
+    if (colorCount > maxColors) {
+      setColorCount(maxColors);
+    }
+  }, [algorithm, colorCount, isInitialized]);
+
+  // Auto-lock base colors in auto mode
+  useEffect(() => {
+    if (!isInitialized || algorithm !== 'auto') return;
+    
+    const newLockedColors = { ...lockedColors };
+    baseColors.forEach((_, seriesIndex) => {
+      if (!newLockedColors[seriesIndex]) {
+        newLockedColors[seriesIndex] = {};
+      }
+      // Always lock the first color (base color) in auto mode
+      newLockedColors[seriesIndex][0] = true;
+    });
+    setLockedColors(newLockedColors);
+  }, [algorithm, isInitialized]);
+
+  // Update locked base colors when base colors change in auto mode
+  useEffect(() => {
+    if (!isInitialized || algorithm !== 'auto') return;
+    
+    // When base colors change, we need to update the locked colors to reflect the new base colors
+    // but keep them locked. We do this by clearing the locked colors for changed base colors
+    // so they get regenerated with the new base color
+    const newLockedColors = { ...lockedColors };
+    
+    // For each base color series, if the base color changed, we need to regenerate
+    // the locked base color while keeping it locked
+    baseColors.forEach((_, seriesIndex) => {
+      if (!newLockedColors[seriesIndex]) {
+        newLockedColors[seriesIndex] = {};
+      }
+      // Always keep the first color locked in auto mode
+      newLockedColors[seriesIndex][0] = true;
+    });
+    
+    setLockedColors(newLockedColors);
+  }, [baseColors, algorithm, isInitialized]);
+
+  // Generate palette series whenever parameters change
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (baseColors.length > 0) {
+      if (algorithm === 'auto') {
+        // For auto algorithm, generate with locked colors
+        const paletteSeries = baseColors.map((baseColor, seriesIndex) => {
+          const baseColorObj = createColorFromHex(baseColor);
+          const seriesLockedColors = Object.entries(lockedColors[seriesIndex] || {})
+            .filter(([_, isLocked]) => isLocked)
+            .map(([colorIndex, _]) => ({
+              color: generatedPaletteSeries[seriesIndex]?.palette[parseInt(colorIndex)] || baseColorObj,
+              index: parseInt(colorIndex)
+            }));
+          
+          const palette = generateAutoPaletteWithLocks(
+            baseColorObj,
+            colorCount,
+            seriesLockedColors,
+            hueShift,
+            saturationShift,
+            lightnessShift,
+            hueDelta,
+            saturationDelta,
+            lightnessDelta,
+            paletteSeed
+          );
+          
+          return {
+            baseColor,
+            palette
+          };
+        });
+        setGeneratedPaletteSeries(paletteSeries);
+      } else {
+        // For other algorithms, use standard generation
+        const paletteSeries = generateMultiplePaletteSeries(
+          baseColors,
+          colorCount,
+          algorithm,
+          hueShift,
+          saturationShift,
+          lightnessShift
+        );
+        setGeneratedPaletteSeries(paletteSeries);
+      }
+    }
+  }, [baseColors, colorCount, algorithm, hueShift, saturationShift, lightnessShift, lockedColors, isInitialized, hueDelta, saturationDelta, lightnessDelta, paletteSeed]);
 
   const updateUrl = () => {
     const params = new URLSearchParams();
-    if (baseColors.length > 0) params.set('baseColor', baseColors[0]);
+    
+    // Handle multiple base colors
+    if (baseColors.length > 0) {
+      if (baseColors.length === 1) {
+        // Single color - use baseColor for backward compatibility
+        params.set('baseColor', baseColors[0]);
+      } else {
+        // Multiple colors - use baseColors array
+        params.set('baseColors', JSON.stringify(baseColors));
+      }
+    }
+    
     params.set('count', colorCount.toString());
     params.set('algorithm', algorithm);
     params.set('hue', hueShift.toString());
     params.set('saturation', saturationShift.toString());
     params.set('lightness', lightnessShift.toString());
     
+    // Include HSL delta values for auto algorithm
+    if (algorithm === 'auto') {
+      params.set('hueDelta', hueDelta.toString());
+      params.set('saturationDelta', saturationDelta.toString());
+      params.set('lightnessDelta', lightnessDelta.toString());
+    }
+    
+    // Include locked colors for auto algorithm
+    if (algorithm === 'auto' && Object.keys(lockedColors).length > 0) {
+      params.set('lockedColors', JSON.stringify(lockedColors));
+    }
+    
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
   };
 
   useEffect(() => {
+    if (!isInitialized) return;
     updateUrl();
-  }, [baseColors, colorCount, algorithm, hueShift, saturationShift, lightnessShift]);
+  }, [baseColors, colorCount, algorithm, hueShift, saturationShift, lightnessShift, lockedColors, isInitialized, hueDelta, saturationDelta, lightnessDelta]);
 
   const generateNewPalette = () => {
-    const randomColor = generateRandomColor();
-    setBaseColors([randomColor]);
+    // Generate new random colors but keep the same number of base colors
+    const newBaseColors = baseColors.map(() => generateRandomColor());
+    setBaseColors(newBaseColors);
+  };
+
+  const randomizePalette = () => {
+    // Only works in auto mode - randomizes non-locked colors
+    if (algorithm === 'auto') {
+      // Trigger palette regeneration by updating the seed
+      setPaletteSeed(prev => prev + 1);
+    }
+  };
+
+  const toggleColorLock = (seriesIndex: number, colorIndex: number) => {
+    setLockedColors(prev => ({
+      ...prev,
+      [seriesIndex]: {
+        ...prev[seriesIndex],
+        [colorIndex]: !prev[seriesIndex]?.[colorIndex]
+      }
+    }));
+  };
+
+  const setAsBaseColor = (seriesIndex: number, _colorIndex: number, color: Color) => {
+    // Set the selected color as the new base color for that series
+    const newBaseColors = [...baseColors];
+    newBaseColors[seriesIndex] = color.hex;
+    setBaseColors(newBaseColors);
+    
+    toast({
+      title: 'Base color updated!',
+      description: `${color.hex} set as new base color`,
+      status: 'success',
+      duration: 2000,
+      isClosable: true,
+    });
+  };
+
+  const addAsBaseColor = (_seriesIndex: number, _colorIndex: number, color: Color) => {
+    // Add the selected color as a new base color, keeping existing ones
+    const newBaseColors = [...baseColors, color.hex];
+    setBaseColors(newBaseColors);
+    
+    toast({
+      title: 'Base color added!',
+      description: `${color.hex} added as new base color`,
+      status: 'success',
+      duration: 2000,
+      isClosable: true,
+    });
+  };
+
+  const removeBaseColor = (seriesIndex: number) => {
+    // Remove the base color at the specified index
+    if (baseColors.length > 1) {
+      const newBaseColors = baseColors.filter((_, index) => index !== seriesIndex);
+      setBaseColors(newBaseColors);
+      
+      toast({
+        title: 'Base color removed!',
+        description: `Base color removed from collection`,
+        status: 'info',
+        duration: 2000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleColorCountChange = (newCount: number) => {
+    const maxColors = getMaxColors(algorithm);
+    const adjustedCount = Math.min(newCount, maxColors);
+    setColorCount(adjustedCount);
   };
 
   const bgColor = useColorModeValue('gray.50', 'gray.900');
@@ -111,7 +376,8 @@ function App() {
                 />
                 <ColorCountSelector
                   colorCount={colorCount}
-                  onColorCountChange={setColorCount}
+                  onColorCountChange={handleColorCountChange}
+                  algorithm={algorithm}
                 />
                 <AlgorithmSelector
                   algorithm={algorithm}
@@ -132,11 +398,35 @@ function App() {
 
               <Divider />
 
-              <PaletteDisplay palette={generatedPalette} />
+              <PaletteDisplay 
+                paletteSeries={generatedPaletteSeries} 
+                onToggleLock={algorithm === 'auto' ? toggleColorLock : undefined}
+                onSetAsBaseColor={setAsBaseColor}
+                onAddAsBaseColor={addAsBaseColor}
+                onRemoveBaseColor={removeBaseColor}
+                lockedColors={lockedColors}
+                algorithm={algorithm}
+              />
 
               <ActionButtons
                 onGenerateNew={generateNewPalette}
+                onRandomizePalette={randomizePalette}
+                algorithm={algorithm}
               />
+
+              {algorithm === 'auto' && (
+                <>
+                  <Divider />
+                  <HSLDeltaControls
+                    hueDelta={hueDelta}
+                    saturationDelta={saturationDelta}
+                    lightnessDelta={lightnessDelta}
+                    onHueDeltaChange={setHueDelta}
+                    onSaturationDeltaChange={setSaturationDelta}
+                    onLightnessDeltaChange={setLightnessDelta}
+                  />
+                </>
+              )}
             </VStack>
           </Box>
         </VStack>

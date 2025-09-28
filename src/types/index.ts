@@ -27,11 +27,23 @@ export type PaletteAlgorithm =
   | 'analogous'
   | 'monochromatic'
   | 'split-complementary'
-  | 'tetradic';
+  | 'tetradic'
+  | 'auto';
 
 export interface Palette {
   colors: Color[];
   algorithm: PaletteAlgorithm;
-  baseColors: string[];
+  baseColor: string;
   generatedAt: Date;
+}
+
+export interface PaletteSeries {
+  baseColor: string;
+  palette: Color[];
+  lockedColors?: boolean[]; // Track which colors are locked
+}
+
+export interface LockedColor {
+  color: Color;
+  index: number;
 }

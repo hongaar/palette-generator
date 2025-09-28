@@ -20,6 +20,7 @@ const algorithmOptions = [
   { value: 'monochromatic', label: 'Monochromatic' },
   { value: 'split-complementary', label: 'Split Complementary' },
   { value: 'tetradic', label: 'Tetradic' },
+  { value: 'auto', label: 'Auto (with locking)' },
 ];
 
 export const AlgorithmSelector: React.FC<AlgorithmSelectorProps> = ({

@@ -9,10 +9,14 @@ import { copyToClipboard } from '../utils/colorUtils';
 
 interface ActionButtonsProps {
   onGenerateNew: () => void;
+  onRandomizePalette?: () => void;
+  algorithm: string;
 }
 
 export const ActionButtons: React.FC<ActionButtonsProps> = ({
   onGenerateNew,
+  onRandomizePalette,
+  algorithm,
 }) => {
   const toast = useToast();
 
@@ -36,8 +40,19 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
         colorScheme="blue"
         size="md"
       >
-        Generate New Palette
+        Randomize Base Colors
       </Button>
+      
+      {algorithm === 'auto' && onRandomizePalette && (
+        <Button
+          leftIcon={<RepeatIcon />}
+          onClick={onRandomizePalette}
+          colorScheme="purple"
+          size="md"
+        >
+          Randomize Palette
+        </Button>
+      )}
       
       <Button
         leftIcon={<CopyIcon />}
