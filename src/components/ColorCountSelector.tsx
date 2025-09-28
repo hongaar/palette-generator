@@ -31,7 +31,9 @@ export const ColorCountSelector: React.FC<ColorCountSelectorProps> = ({
       case 'monochromatic': return 12;
       case 'split-complementary': return 3;
       case 'tetradic': return 4;
-      case 'auto': return 20; // Auto mode allows many colors
+      case 'auto-cursor': return 20; // Auto (Cursor) mode allows many colors
+      case 'auto-gpt5': return 10; // Auto (GPT5) mode limited to 10 colors for performance
+      case 'auto-sonnet4': return 20; // Auto (Sonnet4) mode allows many colors
       default: return 12;
     }
   };

@@ -21,14 +21,16 @@ export interface PaletteGenerationParams {
   lightnessShift: number;
 }
 
-export type PaletteAlgorithm = 
+export type PaletteAlgorithm =
   | 'complementary'
   | 'triadic'
   | 'analogous'
   | 'monochromatic'
   | 'split-complementary'
   | 'tetradic'
-  | 'auto';
+  | 'auto-cursor'
+  | 'auto-gpt5'
+  | 'auto-sonnet4';
 
 export interface Palette {
   colors: Color[];

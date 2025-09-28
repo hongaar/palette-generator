@@ -1,23 +1,24 @@
 import {
-  Box,
-  Container,
-  Divider,
-  Heading,
-  Text,
-  useColorModeValue,
-  useToast,
-  VStack,
+    Box,
+    Container,
+    Divider,
+    Heading,
+    Text,
+    useColorModeValue,
+    useToast,
+    VStack,
 } from '@chakra-ui/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActionButtons } from './components/ActionButtons';
 import { AlgorithmSelector } from './components/AlgorithmSelector';
 import { ColorCountSelector } from './components/ColorCountSelector';
 import { ColorInput } from './components/ColorInput';
+import { GPT5Controls } from './components/GPT5Controls';
 import { HSLControls } from './components/HSLControls';
 import { HSLDeltaControls } from './components/HSLDeltaControls';
 import { PaletteDisplay } from './components/PaletteDisplay';
 import { Color, PaletteAlgorithm, PaletteSeries } from './types';
-import { createColorFromHex, generateAutoPaletteWithLocks, generateMultiplePaletteSeries, generateRandomColor } from './utils/colorUtils';
+import { createColorFromHex, generateAutoPaletteWithLocks, generateGPT5PaletteWrapper, generateMultiplePaletteSeries, generateRandomColor, generateSonnet4PaletteWrapper } from './utils/colorUtils';
 
 
 function App() {
@@ -34,7 +35,9 @@ function App() {
       case 'monochromatic': return 12;
       case 'split-complementary': return 3;
       case 'tetradic': return 4;
-      case 'auto': return 20;
+      case 'auto-cursor': return 20;
+      case 'auto-gpt5': return 10; // Limited to 10 colors for performance
+      case 'auto-sonnet4': return 20;
       default: return 12;
     }
   };
@@ -48,6 +51,16 @@ function App() {
   const [saturationDelta, setSaturationDelta] = useState<number>(20);
   const [lightnessDelta, setLightnessDelta] = useState<number>(20);
   const [paletteSeed, setPaletteSeed] = useState<number>(0); // For triggering palette regeneration
+  
+  // Ref to store previous palette series to avoid infinite loops
+  const previousPaletteSeriesRef = useRef<PaletteSeries[]>([]);
+  
+  // GPT5 algorithm controls
+  const [minHueSeparation, setMinHueSeparation] = useState<number>(22);
+  const [preferPastel, setPreferPastel] = useState<boolean>(false);
+  const [preferDark, setPreferDark] = useState<boolean>(false);
+  const [lockAtEnds, setLockAtEnds] = useState<boolean>(false);
+  
   const toast = useToast();
 
   // Initialize from URL parameters first
@@ -89,7 +102,11 @@ function App() {
         setColorCount(countValue);
       }
     }
-    if (algo) setAlgorithm(algo as PaletteAlgorithm);
+    if (algo) {
+      // Handle backward compatibility for old 'auto' algorithm name
+      const algorithmName = algo === 'auto' ? 'auto-cursor' : algo;
+      setAlgorithm(algorithmName as PaletteAlgorithm);
+    }
     if (hue) {
       const hueValue = parseInt(hue);
       if (!isNaN(hueValue)) setHueShift(hueValue);
@@ -144,9 +161,9 @@ function App() {
     }
   }, [algorithm, colorCount, isInitialized]);
 
-  // Auto-lock base colors in auto mode
+  // Auto-lock base colors in auto modes
   useEffect(() => {
-    if (!isInitialized || algorithm !== 'auto') return;
+    if (!isInitialized || !algorithm.startsWith('auto-')) return;
     
     const newLockedColors = { ...lockedColors };
     baseColors.forEach((_, seriesIndex) => {
@@ -161,7 +178,7 @@ function App() {
 
   // Update locked base colors when base colors change in auto mode
   useEffect(() => {
-    if (!isInitialized || algorithm !== 'auto') return;
+    if (!isInitialized || !algorithm.startsWith('auto-')) return;
     
     // When base colors change, we need to update the locked colors to reflect the new base colors
     // but keep them locked. We do this by clearing the locked colors for changed base colors
@@ -185,14 +202,14 @@ function App() {
   useEffect(() => {
     if (!isInitialized) return;
     if (baseColors.length > 0) {
-      if (algorithm === 'auto') {
-        // For auto algorithm, generate with locked colors
+      if (algorithm === 'auto-cursor') {
+        // For auto-cursor algorithm, generate with locked colors
         const paletteSeries = baseColors.map((baseColor, seriesIndex) => {
           const baseColorObj = createColorFromHex(baseColor);
           const seriesLockedColors = Object.entries(lockedColors[seriesIndex] || {})
             .filter(([_, isLocked]) => isLocked)
             .map(([colorIndex, _]) => ({
-              color: generatedPaletteSeries[seriesIndex]?.palette[parseInt(colorIndex)] || baseColorObj,
+              color: previousPaletteSeriesRef.current[seriesIndex]?.palette[parseInt(colorIndex)] || baseColorObj,
               index: parseInt(colorIndex)
             }));
           
@@ -215,6 +232,23 @@ function App() {
           };
         });
         setGeneratedPaletteSeries(paletteSeries);
+        previousPaletteSeriesRef.current = paletteSeries;
+      } else if (algorithm === 'auto-gpt5') {
+        // For GPT5 algorithm, use GPT5 wrapper with options
+        const paletteSeries = generateGPT5PaletteWrapper(baseColors, colorCount, {
+          minHueSeparation,
+          preferPastel,
+          preferDark,
+          lockAtEnds,
+          seed: paletteSeed
+        });
+        setGeneratedPaletteSeries(paletteSeries);
+        previousPaletteSeriesRef.current = paletteSeries;
+      } else if (algorithm === 'auto-sonnet4') {
+        // For Sonnet4 algorithm, use Sonnet4 wrapper
+        const paletteSeries = generateSonnet4PaletteWrapper(baseColors, colorCount, paletteSeed);
+        setGeneratedPaletteSeries(paletteSeries);
+        previousPaletteSeriesRef.current = paletteSeries;
       } else {
         // For other algorithms, use standard generation
         const paletteSeries = generateMultiplePaletteSeries(
@@ -226,9 +260,10 @@ function App() {
           lightnessShift
         );
         setGeneratedPaletteSeries(paletteSeries);
+        previousPaletteSeriesRef.current = paletteSeries;
       }
     }
-  }, [baseColors, colorCount, algorithm, hueShift, saturationShift, lightnessShift, lockedColors, isInitialized, hueDelta, saturationDelta, lightnessDelta, paletteSeed]);
+  }, [baseColors, colorCount, algorithm, hueShift, saturationShift, lightnessShift, lockedColors, isInitialized, hueDelta, saturationDelta, lightnessDelta, paletteSeed, minHueSeparation, preferPastel, preferDark, lockAtEnds]);
 
   const updateUrl = () => {
     const params = new URLSearchParams();
@@ -251,14 +286,14 @@ function App() {
     params.set('lightness', lightnessShift.toString());
     
     // Include HSL delta values for auto algorithm
-    if (algorithm === 'auto') {
+    if (algorithm.startsWith('auto-')) {
       params.set('hueDelta', hueDelta.toString());
       params.set('saturationDelta', saturationDelta.toString());
       params.set('lightnessDelta', lightnessDelta.toString());
     }
     
     // Include locked colors for auto algorithm
-    if (algorithm === 'auto' && Object.keys(lockedColors).length > 0) {
+    if (algorithm.startsWith('auto-') && Object.keys(lockedColors).length > 0) {
       params.set('lockedColors', JSON.stringify(lockedColors));
     }
     
@@ -279,7 +314,7 @@ function App() {
 
   const randomizePalette = () => {
     // Only works in auto mode - randomizes non-locked colors
-    if (algorithm === 'auto') {
+    if (algorithm.startsWith('auto-')) {
       // Trigger palette regeneration by updating the seed
       setPaletteSeed(prev => prev + 1);
     }
@@ -400,7 +435,7 @@ function App() {
 
               <PaletteDisplay 
                 paletteSeries={generatedPaletteSeries} 
-                onToggleLock={algorithm === 'auto' ? toggleColorLock : undefined}
+                onToggleLock={algorithm.startsWith('auto-') ? toggleColorLock : undefined}
                 onSetAsBaseColor={setAsBaseColor}
                 onAddAsBaseColor={addAsBaseColor}
                 onRemoveBaseColor={removeBaseColor}
@@ -414,7 +449,7 @@ function App() {
                 algorithm={algorithm}
               />
 
-              {algorithm === 'auto' && (
+              {algorithm === 'auto-cursor' && (
                 <>
                   <Divider />
                   <HSLDeltaControls
@@ -424,6 +459,22 @@ function App() {
                     onHueDeltaChange={setHueDelta}
                     onSaturationDeltaChange={setSaturationDelta}
                     onLightnessDeltaChange={setLightnessDelta}
+                  />
+                </>
+              )}
+
+              {algorithm === 'auto-gpt5' && (
+                <>
+                  <Divider />
+                  <GPT5Controls
+                    minHueSeparation={minHueSeparation}
+                    preferPastel={preferPastel}
+                    preferDark={preferDark}
+                    lockAtEnds={lockAtEnds}
+                    onMinHueSeparationChange={setMinHueSeparation}
+                    onPreferPastelChange={setPreferPastel}
+                    onPreferDarkChange={setPreferDark}
+                    onLockAtEndsChange={setLockAtEnds}
                   />
                 </>
               )}

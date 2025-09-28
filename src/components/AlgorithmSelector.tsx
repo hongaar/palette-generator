@@ -13,15 +13,17 @@ interface AlgorithmSelectorProps {
   onAlgorithmChange: (algorithm: PaletteAlgorithm) => void;
 }
 
-const algorithmOptions = [
-  { value: 'complementary', label: 'Complementary' },
-  { value: 'triadic', label: 'Triadic' },
-  { value: 'analogous', label: 'Analogous' },
-  { value: 'monochromatic', label: 'Monochromatic' },
-  { value: 'split-complementary', label: 'Split Complementary' },
-  { value: 'tetradic', label: 'Tetradic' },
-  { value: 'auto', label: 'Auto (with locking)' },
-];
+  const algorithmOptions = [
+    { value: 'complementary', label: 'Complementary' },
+    { value: 'triadic', label: 'Triadic' },
+    { value: 'analogous', label: 'Analogous' },
+    { value: 'monochromatic', label: 'Monochromatic' },
+    { value: 'split-complementary', label: 'Split Complementary' },
+    { value: 'tetradic', label: 'Tetradic' },
+    { value: 'auto-cursor', label: 'Auto (Cursor)' },
+    { value: 'auto-gpt5', label: 'Auto (GPT5)' },
+    { value: 'auto-sonnet4', label: 'Auto (Sonnet4)' },
+  ];
 
 export const AlgorithmSelector: React.FC<AlgorithmSelectorProps> = ({
   algorithm,

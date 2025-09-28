@@ -1,4 +1,6 @@
 import { Color, LockedColor, PaletteAlgorithm, PaletteSeries } from '../types';
+import { generatePalette as generateGPT5Palette, PaletteOptions as GPT5Options } from './auto_gpt5';
+import { generateBeautifulPalette } from './auto_sonnet4';
 
 // Convert hex to RGB
 export function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -143,8 +145,14 @@ export function generatePalette(
       colors.push(createColorFromHsl((baseColor.hsl.h + 270) % 360, baseColor.hsl.s, baseColor.hsl.l, hueShift, saturationShift, lightnessShift));
       break;
       
-    case 'auto':
-      // Auto algorithm generates colors based on harmony principles
+    case 'auto-cursor':
+      // Auto (Cursor) algorithm generates colors based on harmony principles
+      return generateAutoPalette(baseColor, colorCount, hueShift, saturationShift, lightnessShift);
+    case 'auto-gpt5':
+      // GPT5 algorithm - will be handled separately
+      return generateAutoPalette(baseColor, colorCount, hueShift, saturationShift, lightnessShift);
+    case 'auto-sonnet4':
+      // Sonnet4 algorithm - will be handled separately
       return generateAutoPalette(baseColor, colorCount, hueShift, saturationShift, lightnessShift);
   }
   
@@ -417,9 +425,19 @@ export function generateMultiplePaletteSeries(
   saturationShift: number = 0,
   lightnessShift: number = 0
 ): PaletteSeries[] {
-  if (algorithm === 'auto') {
-    // For auto mode, generate aligned palettes
+  if (algorithm === 'auto-cursor') {
+    // For auto-cursor mode, generate aligned palettes
     return generateAlignedAutoPalettes(baseColors, colorCount, hueShift, saturationShift, lightnessShift);
+  }
+  
+  if (algorithm === 'auto-gpt5') {
+    // For GPT5 mode, use the GPT5 algorithm
+    return generateGPT5PaletteWrapper(baseColors, colorCount);
+  }
+  
+  if (algorithm === 'auto-sonnet4') {
+    // For Sonnet4 mode, use the Sonnet4 algorithm
+    return generateSonnet4PaletteWrapper(baseColors, colorCount);
   }
   
   return baseColors.map(baseColor => ({
@@ -525,4 +543,87 @@ function generateHarmoniousColor(baseColor: Color, harmonyType: number, position
   }
   
   return createColorFromHsl(newHue, newSaturation, newLightness, 0, 0, 0);
+}
+
+// Convert our Color type to hex string for external algorithms
+// function colorToHex(color: Color): string {
+//   return color.hex;
+// }
+
+// Convert hex string to our Color type
+function hexToColor(hex: string): Color {
+  return createColorFromHex(hex);
+}
+
+// Generate palette using GPT5 algorithm with timeout protection
+export function generateGPT5PaletteWrapper(
+  baseColors: string[],
+  colorCount: number,
+  options: {
+    minHueSeparation?: number;
+    preferPastel?: boolean;
+    preferDark?: boolean;
+    lockAtEnds?: boolean;
+    seed?: number;
+  } = {}
+): PaletteSeries[] {
+  return baseColors.map(baseColor => {
+    try {
+      const gpt5Options: GPT5Options = {
+        size: Math.min(colorCount, 10), // Limited to 10 colors for performance
+        seed: options.seed,
+        minHueSeparation: Math.max(8, Math.min(45, options.minHueSeparation || 22)), // Clamp between 8-45
+        preferPastel: options.preferPastel || false,
+        preferDark: options.preferDark || false,
+        lockAtEnds: options.lockAtEnds || false,
+      };
+      
+      const lockedColors = [baseColor as `#${string}`];
+      
+      // Add timeout protection
+      const startTime = Date.now();
+      const palette = generateGPT5Palette(lockedColors, gpt5Options);
+      const duration = Date.now() - startTime;
+      
+      if (duration > 1000) { // If it takes more than 1 second, log a warning
+        console.warn(`GPT5 algorithm took ${duration}ms, consider reducing color count or complexity`);
+      }
+      
+      return {
+        baseColor,
+        palette: palette.map(hexToColor)
+      };
+    } catch (error) {
+      console.warn('GPT5 algorithm failed, falling back to simple generation:', error);
+      // Fallback to simple generation if GPT5 fails
+      const baseColorObj = createColorFromHex(baseColor);
+      const simplePalette = generateAutoPalette(baseColorObj, colorCount, 0, 0, 0);
+      return {
+        baseColor,
+        palette: simplePalette
+      };
+    }
+  });
+}
+
+// Generate palette using Sonnet4 algorithm
+export function generateSonnet4PaletteWrapper(
+  baseColors: string[],
+  colorCount: number,
+  seed?: number
+): PaletteSeries[] {
+  return baseColors.map(baseColor => {
+    const sonnet4Options = {
+      inputColors: [baseColor],
+      totalColors: colorCount,
+      seed: seed
+    };
+    
+    const palette = generateBeautifulPalette(sonnet4Options);
+    
+    return {
+      baseColor,
+      palette: palette.map(hexToColor)
+    };
+  });
 }
